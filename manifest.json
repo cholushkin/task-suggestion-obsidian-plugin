@@ -1,0 +1,10 @@
+{
+  "id": "task-suggestion",
+  "name": "Task Suggestion",
+  "version": "0.1.0",
+  "minAppVersion": "1.6.0",
+  "description": "Task suggestion",
+  "author": "Maxim Brightberg",
+  "authorUrl": "",
+  "isDesktopOnly": true
+}

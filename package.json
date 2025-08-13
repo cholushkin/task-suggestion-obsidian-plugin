@@ -1,0 +1,22 @@
+{
+  "name": "task-suggestion-obsidian-plugin",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "build": "node esbuild.config.mjs",
+    "dev": "node esbuild.config.mjs --watch",
+    "deploy": "npm run build && cpy \"dist/**/*.*\" \"d:/obsidian/VAULT/.obsidian/plugins/task-suggestion/\"",
+    "dev-deploy": "npm run dev && npm run deploy"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "devDependencies": {
+    "@types/node": "^24.2.1",
+    "cpy-cli": "^6.0.0",
+    "esbuild": "^0.25.9",
+    "obsidian": "^1.8.7",
+    "typescript": "^5.9.2"
+  }
+}
