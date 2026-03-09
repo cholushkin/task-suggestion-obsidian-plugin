@@ -14,21 +14,12 @@ export default class TaskSuggestionPlugin extends Plugin {
     async onload() {
 
         console.log("[TaskSuggestion] Plugin loaded");
-        console.log("[TaskSuggestion] Vault name:", this.app.vault.getName());
-
-        const root = (this.app.vault.adapter as any).basePath;
-        console.log("[TaskSuggestion] Vault root:", root);
-
-        console.log("[TaskSuggestion] Tasks folder:", TASK_FOLDER);
 
         this.repo = new TaskRepository(this.app, TASK_FOLDER);
         this.suggestionMode = new SuggestionMode(this.app, this.repo);
 
         this.app.workspace.onLayoutReady(async () => {
-
-            console.log("[TaskSuggestion] Vault ready — loading tasks");
             await this.repo.load();
-
         });
 
         this.registerEvent(
@@ -52,10 +43,7 @@ export default class TaskSuggestionPlugin extends Plugin {
                             .setTitle("Rnd suggestions")
                             .setIcon("dice")
                             .onClick(() => {
-
-                                console.log("[TaskSuggestion] Entering random suggestion mode");
                                 this.suggestionMode.enable(file);
-
                             });
                     });
 
@@ -72,8 +60,6 @@ export default class TaskSuggestionPlugin extends Plugin {
     private async cloneAndClean(srcFile: TFile) {
 
         try {
-
-            console.log("[TaskSuggestion] Clone requested:", srcFile.path);
 
             const vault = this.app.vault;
             const srcContent = await vault.read(srcFile);
@@ -97,13 +83,9 @@ export default class TaskSuggestionPlugin extends Plugin {
                 "md"
             );
 
-            console.log("[TaskSuggestion] Target file:", targetFilePath);
-
             const processed = new CloneProcessor().process(srcContent, nextMonday);
 
             const created = await vault.create(targetFilePath, processed);
-
-            console.log("[TaskSuggestion] Done:", created.path);
 
             new Notice(`✨ Created next week plan: "${created.basename}"`);
 
@@ -112,7 +94,7 @@ export default class TaskSuggestionPlugin extends Plugin {
 
         } catch (err) {
 
-            console.error("[TaskSuggestion] Clone failed:", err);
+            console.error(err);
             new Notice("⚠️ Failed to clone the plan.");
 
         }
