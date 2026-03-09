@@ -1,147 +1,440 @@
 // --- Source Blob ---
 
 Files included:
-- tsconfig.json
 - src\CloneProcessor.ts
-- esbuild.config.mjs
-- readme.md
+- src\TaskRepository.ts
 - src\main.ts
+- esbuild.config.mjs
+- tsconfig.json
 - manifest.json
+- readme.md
 
 --------------------------------------------------
-
-// --- Start File: tsconfig.json ---
-
-{
-  "compilerOptions": {
-    "target": "ES2020",
-    "module": "ESNext",
-    "moduleResolution": "Bundler",
-    "lib": ["ES2020", "DOM"],
-    "types": ["node", "obsidian"],
-    "strict": true,
-    "noEmit": true,
-    "inlineSourceMap": true
-  }
-}
-
-
-// --- End File: tsconfig.json ---
 
 // --- Start File: src\CloneProcessor.ts ---
 
 export class CloneProcessor {
-  private static DONE_BLOCK =
-    '\n\n---\n\n<div class="tsop-done-container"><button class="tsop-done-btn">done</button></div>\n';
 
-  /** Process the weekly note:
-   * - Insert "New Tip" button next to each "Tip of the day" callout
-   * - Replace "### Day N. ..." headers with actual dates, starting from the given Monday
-   * - Uncheck all checkboxes
-   * - Remove nested list items (keep only top-level list items)
-   * - Append a "done" button at the end
-   */
   public process(src: string, monday: Date): string {
+
+    console.log("[TaskSuggestion] Processing content");
+
     let out = src;
 
-    // 1) Tip button next to "Tip of the day" callouts
-    out = this.injectTipButtons(out);
-
-    // 2) Replace headers for days with concrete dates starting from Monday
+    console.log("[TaskSuggestion] Stage: fixing day headers");
     out = this.fixDayHeaders(out, monday);
 
-    // 3) Uncheck all checkboxes
+    console.log("[TaskSuggestion] Stage: resetting checkboxes");
     out = this.uncheckAll(out);
 
-    // 4) Remove nested items (any line that starts with indentation + list marker)
+    console.log("[TaskSuggestion] Stage: removing nested list items");
     out = this.removeNestedListItems(out);
 
-    // 5) Append Done button
-    out = this.appendDoneButton(out);
+    console.log("[TaskSuggestion] Cleaning complete");
 
     return out;
   }
 
-  // --- Step 1: Add a "New Tip" button next to "Tip of the day" callouts
-  private injectTipButtons(text: string): string {
-    // Match the exact callout line and append a tip button wrapper
-    // Example line: > [!Tip of the day]
-    return text.replace(
-      /^(>\s*\[\!Tip of the day\].*)$/gmi,
-      (_m, line) => `${line} <span class="tsop-tip-wrap"><button class="tsop-tip-btn">New Tip</button></span>`
-    );
-  }
-
-  // --- Step 2: Replace "### Day N. Weekday ..." headers with Monday..Sunday with correct dates
   private fixDayHeaders(text: string, monday: Date): string {
-    // We’ll scan all day headers in order. For each match, compute date = monday + (N-1) days
-    // Expected header examples:
-    // "### Day 1. Monday 11-Aug-2025"
-    // "### Day 2. Tuesday 12-Aug-2025"
+
     const lines = text.split(/\r?\n/);
     const dayHeaderRegex = /^###\s*Day\s*(\d+)\.\s*.*$/i;
 
     const formatted = lines.map((line) => {
+
       const m = line.match(dayHeaderRegex);
       if (!m) return line;
+
       const idx = parseInt(m[1], 10);
-      if (isNaN(idx) || idx < 1 || idx > 7) return line; // Guard: we expect Day 1..7
+
+      if (isNaN(idx) || idx < 1 || idx > 7)
+        return line;
+
       const date = new Date(monday);
       date.setDate(monday.getDate() + (idx - 1));
+
       const weekday = this.weekdayName(date);
       const ddMmmYYYY = this.formatDateDDMMMYYYY(date);
+
       return `### Day ${idx}. ${weekday} ${ddMmmYYYY}`;
     });
 
     return formatted.join("\n");
   }
 
-  // --- Step 3: Uncheck all checkboxes
   private uncheckAll(text: string): string {
-    // Replace - [x] or - [X] with - [ ]
-    return text.replace(/^(\s*[-*+]\s*)\[(?:x|X)\]/gm, "$1[ ]");
+
+    return text.replace(
+        /^(\s*[-*+]\s*)\[(?:x|X)\]/gm,
+        "$1[ ]"
+    );
   }
 
-  // --- Step 4: Remove nested list items (keep only top-level)
   private removeNestedListItems(text: string): string {
+
     const lines = text.split(/\r?\n/);
     const result: string[] = [];
-    const nestedItemRegex = /^\s+[-*+]\s/; // any indentation before a list marker
+
+    const nestedItemRegex = /^\s+[-*+]\s/;
+
     for (const line of lines) {
+
       if (nestedItemRegex.test(line)) {
-        // skip nested list items
         continue;
       }
+
       result.push(line);
     }
+
     return result.join("\n");
   }
 
-  // --- Step 5: Append a "Done" button block
-  private appendDoneButton(text: string): string {
-    const trimmed = text.replace(/\s+$/g, "");
-    return trimmed + CloneProcessor.DONE_BLOCK;
-  }
-
-  // Helpers
   private weekdayName(d: Date): string {
-    // English weekday names with capitalized first letter
-    const names = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+    const names = [
+      "Sunday",
+      "Monday",
+      "Tuesday",
+      "Wednesday",
+      "Thursday",
+      "Friday",
+      "Saturday"
+    ];
+
     return names[d.getDay()];
   }
 
   private formatDateDDMMMYYYY(d: Date): string {
-    // Example: 11-Aug-2025
+
     const day = d.getDate().toString().padStart(2, "0");
-    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+    const months = [
+      "Jan","Feb","Mar","Apr","May","Jun",
+      "Jul","Aug","Sep","Oct","Nov","Dec"
+    ];
+
     const mmm = months[d.getMonth()];
     const y = d.getFullYear();
+
     return `${day}-${mmm}-${y}`;
   }
 }
 
-
 // --- End File: src\CloneProcessor.ts ---
+
+// --- Start File: src\TaskRepository.ts ---
+
+import { App, TFile } from "obsidian";
+
+export interface Task {
+    id: string;
+    title: string;
+    tags: string[];
+    priority?: number;
+    aiPrompt?: string;
+    googlePrompt?: string;
+}
+
+export class TaskRepository {
+
+    private app: App;
+    private tasks: Map<string, Task> = new Map();
+    private folder: string;
+
+    constructor(app: App, folder: string) {
+        this.app = app;
+        this.folder = folder;
+    }
+
+    public async load(): Promise<void> {
+
+        console.log("[TaskSuggestion] Loading tasks");
+
+        const files = this.app.vault
+            .getMarkdownFiles()
+            .filter(f => f.path.startsWith(this.folder + "/"));
+
+        console.log(`[TaskSuggestion] Scanning ${files.length} task files`);
+
+        for (const file of files) {
+            await this.scanFile(file);
+        }
+
+        console.log(`[TaskSuggestion] Loaded ${this.tasks.size} tasks`);
+    }
+
+    public getAll(): Task[] {
+        return Array.from(this.tasks.values());
+    }
+
+    public getByTag(tags: string[]): Task[] {
+
+        return this.getAll().filter(task =>
+            task.tags.some(t => tags.includes(t))
+        );
+    }
+
+    private async scanFile(file: TFile): Promise<void> {
+
+        const content = await this.app.vault.read(file);
+
+        const lines = content.split(/\r?\n/);
+
+        for (let i = 0; i < lines.length; i++) {
+
+            const line = lines[i];
+
+            const taskMatch = line.match(/^- (.+?)\s+\^([a-zA-Z0-9\-]+)/);
+
+            if (!taskMatch) continue;
+
+            const title = taskMatch[1].trim();
+            const id = taskMatch[2];
+
+            const task: Task = {
+                id,
+                title,
+                tags: []
+            };
+
+            let j = i + 1;
+
+            while (j < lines.length && lines[j].startsWith("\t")) {
+
+                const metaLine = lines[j].trim();
+
+                if (metaLine.startsWith("- Tags:")) {
+
+                    const tagStr = metaLine.replace("- Tags:", "").trim();
+
+                    task.tags = tagStr
+                        .split(",")
+                        .map(t => t.trim());
+
+                }
+
+                if (metaLine.startsWith("- SuggestionPriority:")) {
+
+                    const val = metaLine
+                        .replace("- SuggestionPriority:", "")
+                        .trim();
+
+                    task.priority = Number(val);
+
+                }
+
+                if (metaLine.startsWith("- AIPrompt:")) {
+
+                    task.aiPrompt = metaLine
+                        .replace("- AIPrompt:", "")
+                        .trim();
+
+                }
+
+                if (metaLine.startsWith("- GooglePrompt:")) {
+
+                    task.googlePrompt = metaLine
+                        .replace("- GooglePrompt:", "")
+                        .trim();
+
+                }
+
+                j++;
+            }
+
+            this.tasks.set(id, task);
+
+            console.log(
+                `[TaskSuggestion] Task loaded: ${id} (tags: ${task.tags.join(",")})`
+            );
+        }
+    }
+}
+
+// --- End File: src\TaskRepository.ts ---
+
+// --- Start File: src\main.ts ---
+
+import { Notice, Plugin, TFile, TAbstractFile } from "obsidian";
+import { CloneProcessor } from "./CloneProcessor";
+import { TaskRepository } from "./TaskRepository";
+
+const FOLDER_PREFIX = "!WeekPlans/";
+const TASK_FOLDER = "prj-task-suggestion-obsidian-plugin/Data";
+
+export default class TaskSuggestionPlugin extends Plugin {
+
+    private repo!: TaskRepository;
+
+    async onload() {
+
+        console.log("[TaskSuggestion] Plugin loaded");
+
+        console.log("[TaskSuggestion] Vault name:", this.app.vault.getName());
+
+        const root = (this.app.vault.adapter as any).basePath;
+        console.log("[TaskSuggestion] Vault root:", root);
+
+        console.log("[TaskSuggestion] Tasks folder:", TASK_FOLDER);
+
+        this.repo = new TaskRepository(this.app, TASK_FOLDER);
+
+        this.app.workspace.onLayoutReady(async () => {
+
+            console.log("[TaskSuggestion] Vault ready — loading tasks");
+
+            await this.repo.load();
+
+        });
+
+        this.registerEvent(
+            this.app.workspace.on("file-menu", (menu, file) => {
+
+                if (
+                    file instanceof TFile &&
+                    file.extension === "md" &&
+                    file.path.startsWith(FOLDER_PREFIX)
+                ) {
+
+                    menu.addItem((item) => {
+                        item
+                            .setTitle("Clone and clean")
+                            .setIcon("copy")
+                            .onClick(() => this.cloneAndClean(file));
+                    });
+
+                }
+
+            })
+        );
+    }
+
+    onunload() {
+        console.log("[TaskSuggestion] Plugin unloaded");
+    }
+
+    private async cloneAndClean(srcFile: TFile) {
+
+        try {
+
+            console.log("[TaskSuggestion] Clone requested");
+            console.log("[TaskSuggestion] Source file:", srcFile.path);
+
+            const vault = this.app.vault;
+            const srcContent = await vault.read(srcFile);
+
+            const nextMonday = this.getNextMonday();
+            console.log("[TaskSuggestion] Next Monday:", nextMonday);
+
+            const nextMondayFileDate = this.formatDateYYYYMMDD(nextMonday);
+
+            const { folderPath, baseName } = this.splitPath(srcFile.path);
+
+            const firstSpace = baseName.indexOf(" ");
+
+            const restOfTitle =
+                firstSpace > 0
+                    ? baseName.substring(firstSpace + 1).trim()
+                    : "Week Plan";
+
+            const targetBase = `${nextMondayFileDate} ${restOfTitle}`;
+
+            const targetFilePath = await this.getUniqueFilePath(
+                folderPath,
+                targetBase,
+                "md"
+            );
+
+            console.log("[TaskSuggestion] Target file:", targetFilePath);
+
+            const processed = new CloneProcessor().process(srcContent, nextMonday);
+
+            console.log("[TaskSuggestion] Creating new file");
+
+            const created = await vault.create(targetFilePath, processed);
+
+            console.log("[TaskSuggestion] Done:", created.path);
+
+            new Notice(`✨ Created next week plan: "${created.basename}"`);
+
+            const leaf = this.app.workspace.getLeaf(true);
+            await leaf.openFile(created);
+
+        } catch (err) {
+
+            console.error("[TaskSuggestion] Clone failed:", err);
+            new Notice("⚠️ Failed to clone the plan.");
+
+        }
+    }
+
+    private getNextMonday(): Date {
+
+        const today = new Date();
+        const day = today.getDay();
+        const monday = 1;
+
+        const daysUntilNextMonday = ((monday - day + 7) % 7);
+
+        const next = new Date(today);
+        next.setDate(today.getDate() + daysUntilNextMonday);
+        next.setHours(0, 0, 0, 0);
+
+        return next;
+    }
+
+    private formatDateYYYYMMDD(d: Date): string {
+
+        const y = d.getFullYear();
+        const m = (d.getMonth() + 1).toString().padStart(2, "0");
+        const day = d.getDate().toString().padStart(2, "0");
+
+        return `${y}-${m}-${day}`;
+    }
+
+    private splitPath(path: string): { folderPath: string; baseName: string } {
+
+        const lastSlash = path.lastIndexOf("/");
+
+        const folderPath = lastSlash >= 0 ? path.substring(0, lastSlash) : "";
+        const fileName = lastSlash >= 0 ? path.substring(lastSlash + 1) : path;
+
+        const baseName = fileName.replace(/\.md$/i, "");
+
+        return { folderPath, baseName };
+    }
+
+    private async getUniqueFilePath(
+        folderPath: string,
+        baseName: string,
+        ext: string
+    ): Promise<string> {
+
+        const makePath = (n?: number) =>
+            (folderPath ? folderPath + "/" : "") +
+            (n && n > 1 ? `${baseName} ${n}.${ext}` : `${baseName}.${ext}`);
+
+        let n = 1;
+        let candidate = makePath();
+
+        while (this.exists(candidate)) {
+            n++;
+            candidate = makePath(n);
+        }
+
+        return candidate;
+    }
+
+    private exists(path: string): boolean {
+
+        const f: TAbstractFile | null =
+            this.app.vault.getAbstractFileByPath(path);
+
+        return f !== null;
+    }
+}
+
+// --- End File: src\main.ts ---
 
 // --- Start File: esbuild.config.mjs ---
 
@@ -166,6 +459,40 @@ console.log("Build complete");
 
 
 // --- End File: esbuild.config.mjs ---
+
+// --- Start File: tsconfig.json ---
+
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2020", "DOM"],
+    "types": ["node", "obsidian"],
+    "strict": true,
+    "noEmit": true,
+    "inlineSourceMap": true
+  }
+}
+
+
+// --- End File: tsconfig.json ---
+
+// --- Start File: manifest.json ---
+
+{
+  "id": "task-suggestion",
+  "name": "Task Suggestion",
+  "version": "0.1.0",
+  "minAppVersion": "1.6.0",
+  "description": "Task suggestion",
+  "author": "Maxim Brightberg",
+  "authorUrl": "",
+  "isDesktopOnly": true
+}
+
+
+// --- End File: manifest.json ---
 
 // --- Start File: readme.md ---
 
@@ -222,226 +549,3 @@ task-suggestion-obsidian-plugin/
 
 
 // --- End File: readme.md ---
-
-// --- Start File: src\main.ts ---
-
-import { Notice, Plugin, TFile, TAbstractFile } from "obsidian";
-import { CloneProcessor } from "./CloneProcessor";
-
-const FOLDER_PREFIX = "!WeekPlans/";          // Change this to your target folder
-const CLONE_SUFFIX = " - (WIP)";              // Suffix for cloned notes
-const DONE_BTN_SELECTOR = ".tsop-done-btn";
-const TIP_BTN_SELECTOR = ".tsop-tip-btn";
-
-export default class TaskSuggestionPlugin extends Plugin {
-    onload() {
-        // Context menu on files inside the target folder
-        this.registerEvent(
-            this.app.workspace.on("file-menu", (menu, file) => {
-                if (
-                    file instanceof TFile &&
-                    file.extension === "md" &&
-                    file.path.startsWith(FOLDER_PREFIX)
-                ) {
-                    menu.addItem((item) => {
-                        item
-                            .setTitle("Create tasks suggestion")
-                            .setIcon("check")
-                            .onClick(() => this.createTasksSuggestion(file));
-                    });
-                }
-            })
-        );
-
-        // Wire up buttons added by CloneProcessor
-        this.registerMarkdownPostProcessor((el) => {
-            // Tip button
-            el.querySelectorAll<HTMLButtonElement>(TIP_BTN_SELECTOR).forEach((btn) => {
-                if ((btn as any)._tsopBound) return;
-                (btn as any)._tsopBound = true;
-                btn.addEventListener("click", () => {
-                    new Notice("📝 (demo) New Tip clicked");
-                });
-            });
-
-            // Done button
-            el.querySelectorAll<HTMLButtonElement>(DONE_BTN_SELECTOR).forEach((btn) => {
-                if ((btn as any)._tsopBound) return;
-                (btn as any)._tsopBound = true;
-                btn.addEventListener("click", async () => this.finalizeCurrentDoc());
-            });
-        });
-
-        console.log("TaskSuggestionPlugin loaded");
-    }
-
-    onunload() {
-        console.log("TaskSuggestionPlugin unloaded");
-    }
-
-    // Create the cloned + processed weekly note
-    private async createTasksSuggestion(srcFile: TFile) {
-        try {
-            const vault = this.app.vault;
-            const srcContent = await vault.read(srcFile);
-
-            const nextMonday = this.getNextMonday();
-            const nextMondayFileDate = this.formatDateYYYYMMDD(nextMonday); // YYYY-MM-DD (for filename start)
-            const { folderPath, baseName } = this.splitPath(srcFile.path);
-
-            // Keep the "rest of title" after the first space (after date), or default
-            const firstSpace = baseName.indexOf(" ");
-            const restOfTitle =
-                firstSpace > 0 ? baseName.substring(firstSpace + 1).trim() : "Week Plan";
-
-            const targetBase = `${nextMondayFileDate} ${restOfTitle}${CLONE_SUFFIX}`;
-            const targetFilePath = await this.getUniqueFilePath(folderPath, targetBase, "md");
-
-            // Process the content via CloneProcessor
-            const processed = new CloneProcessor().process(srcContent, nextMonday);
-
-            const created = await vault.create(targetFilePath, processed);
-
-            new Notice(`✨ Created tasks suggestion: "${created.basename}"`);
-            const leaf = this.app.workspace.getLeaf(true);
-            await leaf.openFile(created);
-        } catch (err) {
-            console.error(err);
-            new Notice("⚠️ Failed to create tasks suggestion. Check console for details.");
-        }
-    }
-
-    // When user clicks the "Done" button inside the processed note
-    private async finalizeCurrentDoc() {
-        const file = this.app.workspace.getActiveFile();
-        if (!file) {
-            new Notice("No active file.");
-            return;
-        }
-        try {
-            const vault = this.app.vault;
-            let content = await vault.read(file);
-
-            // Strip all plugin buttons
-            content = content
-                // remove individual buttons
-                .replace(/<button class="tsop-(?:tip|done)-btn"[^>]*>.*?<\/button>/g, "")
-                // remove empty helper spans/divs leftover:
-                .replace(/<span class="tsop-tip-wrap">\s*<\/span>/g, "")
-                .replace(/<div class="tsop-done-container">\s*<\/div>/g, "")
-                .replace(/\n{3,}$/g, "\n\n");
-
-            await vault.modify(file, content);
-
-            // Rename to remove the suffix
-            const { folderPath, baseName } = this.splitPath(file.path);
-            const newBase = baseName.endsWith(CLONE_SUFFIX)
-                ? baseName.slice(0, -CLONE_SUFFIX.length)
-                : baseName; // if somehow no suffix, keep name
-
-            const targetPath = await this.getUniqueFilePath(folderPath, newBase, "md");
-            if (targetPath !== file.path) {
-                const renamed = await vault.rename(file, targetPath);
-                // Open the renamed file
-                const leaf = this.app.workspace.getLeaf(true);
-                await leaf.openFile(this.app.vault.getAbstractFileByPath(targetPath) as TFile);
-            }
-
-            new Notice("✅ Finalized: removed buttons and cleared (WIP) suffix.");
-        } catch (e) {
-            console.error(e);
-            new Notice("⚠️ Failed to finalize the document. See console.");
-        }
-    }
-
-    /** Returns the next Monday (if today is Monday, returns today). */
-    private getNextMonday(): Date {
-        const today = new Date();
-        const day = today.getDay(); // 0=Sun, 1=Mon, ... 6=Sat
-        const monday = 1;
-        const daysUntilNextMonday = ((monday - day + 7) % 7);
-        const next = new Date(today);
-        next.setDate(today.getDate() + daysUntilNextMonday);
-        next.setHours(0, 0, 0, 0);
-        return next;
-    }
-
-    /** Format date as "YYYY-MM-DD" for filenames (e.g., 2025-08-11) */
-    private formatDateYYYYMMDD(d: Date): string {
-        const y = d.getFullYear();
-        const m = (d.getMonth() + 1).toString().padStart(2, "0");
-        const day = d.getDate().toString().padStart(2, "0");
-        return `${y}-${m}-${day}`;
-    }
-
-    private splitPath(path: string): { folderPath: string; baseName: string } {
-        const lastSlash = path.lastIndexOf("/");
-        const folderPath = lastSlash >= 0 ? path.substring(0, lastSlash) : "";
-        const fileName = lastSlash >= 0 ? path.substring(lastSlash + 1) : path;
-        const baseName = fileName.replace(/\.md$/i, "");
-        return { folderPath, baseName };
-    }
-
-    private async getUniqueFilePath(
-        folderPath: string,
-        baseName: string,
-        ext: string
-    ): Promise<string> {
-        const makePath = (n?: number) =>
-            (folderPath ? folderPath + "/" : "") +
-            (n && n > 1 ? `${baseName} ${n}.${ext}` : `${baseName}.${ext}`);
-
-        let n = 1;
-        let candidate = makePath();
-        while (this.exists(candidate)) {
-            n++;
-            candidate = makePath(n);
-        }
-        return candidate;
-    }
-
-    private exists(path: string): boolean {
-        const f: TAbstractFile | null = this.app.vault.getAbstractFileByPath(path);
-        return f !== null;
-    }
-}
-
-
-// --- End File: src\main.ts ---
-
-// --- Start File: manifest.json ---
-
-{
-  "id": "task-suggestion",
-  "name": "Task Suggestion",
-  "version": "0.1.0",
-  "minAppVersion": "1.6.0",
-  "description": "Task suggestion",
-  "author": "Maxim Brightberg",
-  "authorUrl": "",
-  "isDesktopOnly": true
-}
-
-
-// --- End File: manifest.json ---
-
-
---------------------------------------------------
-// --- Prompt ---
-
-Please perform the following:
-
-1. **Review the Code**  
-   - Examine the structure, logic, and clarity of the implementation.  
-   - Comment on code organization, readability, and maintainability.
-
-2. **Identify Potential Issues**  
-   - Analyze for bugs, edge cases, or performance bottlenecks.  
-   - Consider portability, extensibility, and error handling robustness.
-
-3. **Provide Suggestions**  
-   - Offer ideas to improve the current design or implementation.  
-   - Recommend best practices or alternative patterns, if applicable.
-
-4. **Additional Task**  
-   - {additional_task_0}
