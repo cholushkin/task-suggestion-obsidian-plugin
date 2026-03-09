@@ -1,63 +1,93 @@
-import { App, TFile } from "obsidian";
-import { TaskRepository } from "./TaskRepository";
+import { App, TFile, MarkdownView } from "obsidian";
+import { TaskRepository, Task } from "./TaskRepository";
 
 export class SuggestionMode {
 
     private app: App;
     private repo: TaskRepository;
     private file!: TFile;
-    private active = false;
-
-    private originalOpenLink: any;
 
     constructor(app: App, repo: TaskRepository) {
         this.app = app;
         this.repo = repo;
+
+        this.installLinkInterceptor();
     }
+
+    /* ---------------------------------------- */
+    /* ENABLE SUGGESTION MODE                   */
+    /* ---------------------------------------- */
 
     async enable(file: TFile) {
 
-        if (this.active) {
+        this.file = file;
+
+        const mode = await this.detectSuggestionMode(file);
+
+        if (mode.active) {
             console.log("[TaskSuggestion] already in suggestion mode");
             return;
         }
 
         console.log("[TaskSuggestion] Suggestion mode enabled");
 
-        this.file = file;
-        this.active = true;
-
         await this.injectDiceLinks();
-
-        this.hookHandler();
     }
 
-    async exit() {
+    /* ---------------------------------------- */
+    /* EXIT SUGGESTION MODE                     */
+    /* ---------------------------------------- */
+
+    async exit(file: TFile) {
 
         console.log("[TaskSuggestion] Suggestion mode exit");
 
-        const content = await this.app.vault.read(this.file);
+        const content = await this.app.vault.read(file);
 
         const cleaned = content
-            .replace(/\s*\[\[ts-roll-[^\]]+\]\]/g, "")
-            .replace(/\[\[ts-exit-suggestion-mode\|Exit suggestion mode\]\]/g, "");
+            .replace(/\s*\[\[ts-roll-[^]]+]]/g, "")
+            .replace(/\[\[ts-exit-suggestion-mode\|Exit suggestion mode]]/g, "");
 
-        await this.app.vault.modify(this.file, cleaned);
-
-        this.unhookHandler();
-
-        this.active = false;
+        await this.app.vault.modify(file, cleaned);
     }
 
     /* ---------------------------------------- */
-    /* LINK INTERCEPTION                        */
+    /* MODE DETECTION                           */
     /* ---------------------------------------- */
 
-    private hookHandler() {
+    private async detectSuggestionMode(file: TFile): Promise<{ active: boolean }> {
+
+        const content = await this.app.vault.read(file);
+
+        const hasDice = content.includes("ts-roll-");
+        const hasExit = content.includes("ts-exit-suggestion-mode");
+
+        if (hasDice !== hasExit) {
+
+            console.warn(
+                "[TaskSuggestion] inconsistent suggestion mode state",
+                { hasDice, hasExit }
+            );
+        }
+
+        return {
+            active: hasDice || hasExit
+        };
+    }
+
+    /* ---------------------------------------- */
+    /* LINK INTERCEPTION (GLOBAL)               */
+    /* ---------------------------------------- */
+
+    private installLinkInterceptor() {
 
         const workspace = this.app.workspace as any;
 
-        this.originalOpenLink = workspace.openLinkText;
+        if (workspace.__taskSuggestionInterceptorInstalled) return;
+
+        workspace.__taskSuggestionInterceptorInstalled = true;
+
+        const original = workspace.openLinkText;
 
         workspace.openLinkText = async (
             linktext: string,
@@ -65,17 +95,26 @@ export class SuggestionMode {
             newLeaf?: boolean
         ) => {
 
-            if (!this.active) {
-                return this.originalOpenLink.call(
-                    workspace,
-                    linktext,
-                    sourcePath,
-                    newLeaf
-                );
+            /* Only care about our links */
+            if (!linktext.startsWith("ts-")) {
+                return original.call(workspace, linktext, sourcePath, newLeaf);
+            }
+
+            const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+            const file = view?.file;
+
+            if (!file) {
+                return original.call(workspace, linktext, sourcePath, newLeaf);
+            }
+
+            const mode = await this.detectSuggestionMode(file);
+
+            if (!mode.active) {
+                return original.call(workspace, linktext, sourcePath, newLeaf);
             }
 
             if (linktext === "ts-exit-suggestion-mode") {
-                await this.exit();
+                await this.exit(file);
                 return;
             }
 
@@ -88,22 +127,8 @@ export class SuggestionMode {
                 return;
             }
 
-            return this.originalOpenLink.call(
-                workspace,
-                linktext,
-                sourcePath,
-                newLeaf
-            );
+            return original.call(workspace, linktext, sourcePath, newLeaf);
         };
-    }
-
-    private unhookHandler() {
-
-        const workspace = this.app.workspace as any;
-
-        if (this.originalOpenLink) {
-            workspace.openLinkText = this.originalOpenLink;
-        }
     }
 
     /* ---------------------------------------- */
@@ -121,32 +146,33 @@ export class SuggestionMode {
         const random =
             candidates[Math.floor(Math.random() * candidates.length)];
 
-        await this.replaceLine(id, random);
+        this.replaceLine(id, random);
     }
 
     /* ---------------------------------------- */
-    /* REPLACE TASK LINE                        */
+    /* EDITOR LINE REPLACEMENT                  */
     /* ---------------------------------------- */
 
-    private async replaceLine(
-        oldId: string,
-        newTask: { id: string; title: string; path: string }
-    ) {
+    private replaceLine(oldId: string, newTask: Task) {
 
-        const content = await this.app.vault.read(this.file);
-        const lines = content.split("\n");
+        const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+        if (!view) return;
 
-        const updated = lines.map(line => {
+        const editor = view.editor;
 
-            if (!line.includes(`#^${oldId}`)) return line;
+        const cursor = editor.getCursor();
+        const line = editor.getLine(cursor.line);
 
-            const newLink =
-                `[[${newTask.path}#^${newTask.id}|${newTask.title}]] [[ts-roll-${newTask.id}|🎲]]`;
+        if (!line || !line.includes(`#^${oldId}`)) return;
 
-            return line.replace(/\[\[.*?#\^[^\]]+\]\].*/, newLink);
-        });
+        const newLink =
+            `[[${newTask.path}#^${newTask.id}|${newTask.title}]] [[ts-roll-${newTask.id}|🎲]]`;
 
-        await this.app.vault.modify(this.file, updated.join("\n"));
+        editor.replaceRange(
+            newLink,
+            { line: cursor.line, ch: 0 },
+            { line: cursor.line, ch: line.length }
+        );
     }
 
     /* ---------------------------------------- */
@@ -160,7 +186,7 @@ export class SuggestionMode {
 
         const updated = lines.map(line => {
 
-            const match = line.match(/\[\[.*?#\^([a-zA-Z0-9\-]+).*?\]\]/);
+            const match = line.match(/\[\[.*?#\^([a-zA-Z0-9-]+).*?]]/);
             if (!match) return line;
 
             const id = match[1];
