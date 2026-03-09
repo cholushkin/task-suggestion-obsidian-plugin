@@ -57,9 +57,7 @@ export class CloneProcessor {
 
     for (const line of lines) {
 
-      if (nestedItemRegex.test(line)) {
-        continue;
-      }
+      if (nestedItemRegex.test(line)) continue;
 
       result.push(line);
     }

@@ -5,100 +5,47 @@ export class SuggestionMode {
 
     private app: App;
     private repo: TaskRepository;
+    private file!: TFile;
     private active = false;
+    private doneButton?: HTMLButtonElement;
 
     constructor(app: App, repo: TaskRepository) {
         this.app = app;
         this.repo = repo;
     }
 
-    public async enable(file: TFile) {
+    async enable(file: TFile) {
 
-        console.log("[TaskSuggestion] Rnd suggestions mode enabled");
+        console.log("[TaskSuggestion] Random suggestion mode enabled");
 
+        this.file = file;
         this.active = true;
 
-        const leaf = this.app.workspace.getLeaf(false);
-        await leaf.openFile(file);
+        await this.addDice();
 
-        setTimeout(() => {
-            this.attachDice();
-            this.attachDoneButton();
-        }, 150);
+        this.attachDoneButton();
+
+        document.addEventListener("click", this.handleClick);
     }
 
-    private attachDice() {
+    private async addDice() {
 
-        if (!this.active) return;
+        const content = await this.app.vault.read(this.file);
 
-        const view = this.app.workspace.getActiveViewOfType(MarkdownView);
-        if (!view) return;
+        const lines = content.split("\n");
 
-        const container = view.containerEl;
+        const updated = lines.map(line => {
 
-        const links = container.querySelectorAll("[data-href*='#^']");
+            if (line.includes("#^") && !line.includes("🎲")) {
+                return line + " 🎲";
+            }
 
-        let attached = 0;
-
-        links.forEach(link => {
-
-            const href = link.getAttribute("data-href");
-            if (!href) return;
-
-            const blockId = href.split("^")[1];
-            if (!blockId) return;
-
-            if (link.parentElement?.querySelector(".ts-dice")) return;
-
-            const btn = document.createElement("button");
-
-            btn.textContent = "🎲";
-            btn.className = "ts-dice";
-            btn.style.marginLeft = "6px";
-
-            btn.onclick = () => this.roll(link as HTMLElement, blockId);
-
-            link.after(btn);
-
-            attached++;
-
+            return line;
         });
 
-        console.log(`[TaskSuggestion] Dice buttons attached: ${attached}`);
-    }
+        await this.app.vault.modify(this.file, updated.join("\n"));
 
-    private roll(link: HTMLElement, blockId: string) {
-
-        console.log("[TaskSuggestion] Roll:", blockId);
-
-        const original = this.repo.getAll().find(t => t.id === blockId);
-        if (!original) return;
-
-        const candidates = this.repo.getByTag(original.tags);
-
-        if (!candidates.length) return;
-
-        const random = candidates[Math.floor(Math.random() * candidates.length)];
-
-        const href = link.getAttribute("data-href") || "";
-        const notePath = href.split("#")[0];
-
-        const newLink = `[[${notePath}#^${random.id}|${random.title}]]`;
-
-        const li = link.closest("li");
-        if (!li) return;
-
-        const textNode = li.childNodes[0];
-
-        if (textNode && textNode.textContent) {
-
-            li.innerHTML = li.innerHTML.replace(/\[\[.*?#\^.*?\|.*?\]\]/, newLink);
-
-        }
-
-        console.log("[TaskSuggestion] Suggested:", random.id);
-
-        setTimeout(() => this.attachDice(), 50);
+        console.log("[TaskSuggestion] Dice added");
     }
 
     private attachDoneButton() {
@@ -106,7 +53,7 @@ export class SuggestionMode {
         const view = this.app.workspace.getActiveViewOfType(MarkdownView);
         if (!view) return;
 
-        const container = view.containerEl;
+        const container = view.contentEl;
 
         if (container.querySelector(".ts-done-btn")) return;
 
@@ -115,23 +62,77 @@ export class SuggestionMode {
         btn.textContent = "Done";
         btn.className = "ts-done-btn";
 
-        btn.style.marginTop = "20px";
         btn.style.display = "block";
+        btn.style.marginTop = "24px";
 
         btn.onclick = () => this.exit();
 
         container.appendChild(btn);
 
+        this.doneButton = btn;
+
         console.log("[TaskSuggestion] Done button added");
     }
 
-    private exit() {
+    private handleClick = async () => {
+
+        if (!this.active) return;
+
+        const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+        if (!view) return;
+
+        const editor = view.editor;
+
+        const cursor = editor.getCursor();
+        const line = editor.getLine(cursor.line);
+
+        if (!line || !line.includes("🎲")) return;
+
+        const match = line.match(/\[\[.*?#\^([a-zA-Z0-9\-]+).*?\]\]/);
+        if (!match) return;
+
+        const blockId = match[1];
+
+        console.log("[TaskSuggestion] Roll:", blockId);
+
+        const task = this.repo.getAll().find(t => t.id === blockId);
+        if (!task) return;
+
+        const candidates = this.repo.getByTag(task.tags);
+        if (!candidates.length) return;
+
+        const random =
+            candidates[Math.floor(Math.random() * candidates.length)];
+
+        const newLink =
+            `[[${random.title}#^${random.id}|${random.title}]] 🎲`;
+
+        editor.replaceRange(
+            line.replace(/\[\[.*?\]\].*?🎲/, newLink),
+            { line: cursor.line, ch: 0 },
+            { line: cursor.line, ch: line.length }
+        );
+
+        console.log("[TaskSuggestion] Suggested:", random.id);
+    };
+
+    async exit() {
 
         console.log("[TaskSuggestion] Exit random suggestion mode");
 
         this.active = false;
 
-        document.querySelectorAll(".ts-dice").forEach(b => b.remove());
-        document.querySelectorAll(".ts-done-btn").forEach(b => b.remove());
+        const content = await this.app.vault.read(this.file);
+
+        const cleaned = content.replace(/ 🎲/g, "");
+
+        await this.app.vault.modify(this.file, cleaned);
+
+        if (this.doneButton) {
+            this.doneButton.remove();
+            this.doneButton = undefined;
+        }
+
+        document.removeEventListener("click", this.handleClick);
     }
 }

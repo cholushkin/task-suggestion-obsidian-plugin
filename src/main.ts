@@ -14,7 +14,6 @@ export default class TaskSuggestionPlugin extends Plugin {
     async onload() {
 
         console.log("[TaskSuggestion] Plugin loaded");
-
         console.log("[TaskSuggestion] Vault name:", this.app.vault.getName());
 
         const root = (this.app.vault.adapter as any).basePath;
@@ -85,7 +84,6 @@ export default class TaskSuggestionPlugin extends Plugin {
             const { folderPath, baseName } = this.splitPath(srcFile.path);
 
             const firstSpace = baseName.indexOf(" ");
-
             const restOfTitle =
                 firstSpace > 0
                     ? baseName.substring(firstSpace + 1).trim()

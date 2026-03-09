@@ -4,9 +4,6 @@ export interface Task {
     id: string;
     title: string;
     tags: string[];
-    priority?: number;
-    aiPrompt?: string;
-    googlePrompt?: string;
 }
 
 export class TaskRepository {
@@ -20,7 +17,7 @@ export class TaskRepository {
         this.folder = folder;
     }
 
-    public async load(): Promise<void> {
+    async load(): Promise<void> {
 
         console.log("[TaskSuggestion] Loading tasks");
 
@@ -37,11 +34,11 @@ export class TaskRepository {
         console.log(`[TaskSuggestion] Loaded ${this.tasks.size} tasks`);
     }
 
-    public getAll(): Task[] {
+    getAll(): Task[] {
         return Array.from(this.tasks.values());
     }
 
-    public getByTag(tags: string[]): Task[] {
+    getByTag(tags: string[]): Task[] {
 
         return this.getAll().filter(task =>
             task.tags.some(t => tags.includes(t))
@@ -52,18 +49,16 @@ export class TaskRepository {
 
         const content = await this.app.vault.read(file);
 
-        const lines = content.split(/\r?\n/);
+        const lines = content.split("\n");
 
         for (let i = 0; i < lines.length; i++) {
 
-            const line = lines[i];
+            const match = lines[i].match(/^- (.+?)\s+\^([a-zA-Z0-9\-]+)/);
 
-            const taskMatch = line.match(/^- (.+?)\s+\^([a-zA-Z0-9\-]+)/);
+            if (!match) continue;
 
-            if (!taskMatch) continue;
-
-            const title = taskMatch[1].trim();
-            const id = taskMatch[2];
+            const title = match[1].trim();
+            const id = match[2];
 
             const task: Task = {
                 id,
@@ -75,15 +70,13 @@ export class TaskRepository {
 
             while (j < lines.length && lines[j].startsWith("\t")) {
 
-                const metaLine = lines[j].trim();
+                const meta = lines[j].trim();
 
-                if (metaLine.startsWith("- Tags:")) {
+                if (meta.startsWith("- Tags:")) {
 
-                    const tagStr = metaLine.replace("- Tags:", "").trim();
+                    const tagStr = meta.replace("- Tags:", "").trim();
 
-                    task.tags = tagStr
-                        .split(",")
-                        .map(t => t.trim());
+                    task.tags = tagStr.split(",").map(t => t.trim());
 
                 }
 
@@ -93,7 +86,6 @@ export class TaskRepository {
             this.tasks.set(id, task);
 
             console.log(`[TaskSuggestion] Task loaded: ${id}`);
-
         }
     }
 }

@@ -2,12 +2,13 @@
 
 Files included:
 - src\CloneProcessor.ts
-- src\TaskRepository.ts
-- src\main.ts
-- esbuild.config.mjs
 - tsconfig.json
-- manifest.json
+- src\main.ts
 - readme.md
+- manifest.json
+- src\SuggestionMode.ts
+- src\TaskRepository.ts
+- esbuild.config.mjs
 
 --------------------------------------------------
 
@@ -21,13 +22,8 @@ export class CloneProcessor {
 
     let out = src;
 
-    console.log("[TaskSuggestion] Stage: fixing day headers");
     out = this.fixDayHeaders(out, monday);
-
-    console.log("[TaskSuggestion] Stage: resetting checkboxes");
     out = this.uncheckAll(out);
-
-    console.log("[TaskSuggestion] Stage: removing nested list items");
     out = this.removeNestedListItems(out);
 
     console.log("[TaskSuggestion] Cleaning complete");
@@ -46,9 +42,7 @@ export class CloneProcessor {
       if (!m) return line;
 
       const idx = parseInt(m[1], 10);
-
-      if (isNaN(idx) || idx < 1 || idx > 7)
-        return line;
+      if (isNaN(idx) || idx < 1 || idx > 7) return line;
 
       const date = new Date(monday);
       date.setDate(monday.getDate() + (idx - 1));
@@ -79,9 +73,7 @@ export class CloneProcessor {
 
     for (const line of lines) {
 
-      if (nestedItemRegex.test(line)) {
-        continue;
-      }
+      if (nestedItemRegex.test(line)) continue;
 
       result.push(line);
     }
@@ -92,13 +84,8 @@ export class CloneProcessor {
   private weekdayName(d: Date): string {
 
     const names = [
-      "Sunday",
-      "Monday",
-      "Tuesday",
-      "Wednesday",
-      "Thursday",
-      "Friday",
-      "Saturday"
+      "Sunday","Monday","Tuesday","Wednesday",
+      "Thursday","Friday","Saturday"
     ];
 
     return names[d.getDay()];
@@ -122,142 +109,30 @@ export class CloneProcessor {
 
 // --- End File: src\CloneProcessor.ts ---
 
-// --- Start File: src\TaskRepository.ts ---
+// --- Start File: tsconfig.json ---
 
-import { App, TFile } from "obsidian";
-
-export interface Task {
-    id: string;
-    title: string;
-    tags: string[];
-    priority?: number;
-    aiPrompt?: string;
-    googlePrompt?: string;
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2020", "DOM"],
+    "types": ["node", "obsidian"],
+    "strict": true,
+    "noEmit": true,
+    "inlineSourceMap": true
+  }
 }
 
-export class TaskRepository {
 
-    private app: App;
-    private tasks: Map<string, Task> = new Map();
-    private folder: string;
-
-    constructor(app: App, folder: string) {
-        this.app = app;
-        this.folder = folder;
-    }
-
-    public async load(): Promise<void> {
-
-        console.log("[TaskSuggestion] Loading tasks");
-
-        const files = this.app.vault
-            .getMarkdownFiles()
-            .filter(f => f.path.startsWith(this.folder + "/"));
-
-        console.log(`[TaskSuggestion] Scanning ${files.length} task files`);
-
-        for (const file of files) {
-            await this.scanFile(file);
-        }
-
-        console.log(`[TaskSuggestion] Loaded ${this.tasks.size} tasks`);
-    }
-
-    public getAll(): Task[] {
-        return Array.from(this.tasks.values());
-    }
-
-    public getByTag(tags: string[]): Task[] {
-
-        return this.getAll().filter(task =>
-            task.tags.some(t => tags.includes(t))
-        );
-    }
-
-    private async scanFile(file: TFile): Promise<void> {
-
-        const content = await this.app.vault.read(file);
-
-        const lines = content.split(/\r?\n/);
-
-        for (let i = 0; i < lines.length; i++) {
-
-            const line = lines[i];
-
-            const taskMatch = line.match(/^- (.+?)\s+\^([a-zA-Z0-9\-]+)/);
-
-            if (!taskMatch) continue;
-
-            const title = taskMatch[1].trim();
-            const id = taskMatch[2];
-
-            const task: Task = {
-                id,
-                title,
-                tags: []
-            };
-
-            let j = i + 1;
-
-            while (j < lines.length && lines[j].startsWith("\t")) {
-
-                const metaLine = lines[j].trim();
-
-                if (metaLine.startsWith("- Tags:")) {
-
-                    const tagStr = metaLine.replace("- Tags:", "").trim();
-
-                    task.tags = tagStr
-                        .split(",")
-                        .map(t => t.trim());
-
-                }
-
-                if (metaLine.startsWith("- SuggestionPriority:")) {
-
-                    const val = metaLine
-                        .replace("- SuggestionPriority:", "")
-                        .trim();
-
-                    task.priority = Number(val);
-
-                }
-
-                if (metaLine.startsWith("- AIPrompt:")) {
-
-                    task.aiPrompt = metaLine
-                        .replace("- AIPrompt:", "")
-                        .trim();
-
-                }
-
-                if (metaLine.startsWith("- GooglePrompt:")) {
-
-                    task.googlePrompt = metaLine
-                        .replace("- GooglePrompt:", "")
-                        .trim();
-
-                }
-
-                j++;
-            }
-
-            this.tasks.set(id, task);
-
-            console.log(
-                `[TaskSuggestion] Task loaded: ${id} (tags: ${task.tags.join(",")})`
-            );
-        }
-    }
-}
-
-// --- End File: src\TaskRepository.ts ---
+// --- End File: tsconfig.json ---
 
 // --- Start File: src\main.ts ---
 
 import { Notice, Plugin, TFile, TAbstractFile } from "obsidian";
 import { CloneProcessor } from "./CloneProcessor";
 import { TaskRepository } from "./TaskRepository";
+import { SuggestionMode } from "./SuggestionMode";
 
 const FOLDER_PREFIX = "!WeekPlans/";
 const TASK_FOLDER = "prj-task-suggestion-obsidian-plugin/Data";
@@ -265,11 +140,11 @@ const TASK_FOLDER = "prj-task-suggestion-obsidian-plugin/Data";
 export default class TaskSuggestionPlugin extends Plugin {
 
     private repo!: TaskRepository;
+    private suggestionMode!: SuggestionMode;
 
     async onload() {
 
         console.log("[TaskSuggestion] Plugin loaded");
-
         console.log("[TaskSuggestion] Vault name:", this.app.vault.getName());
 
         const root = (this.app.vault.adapter as any).basePath;
@@ -278,11 +153,11 @@ export default class TaskSuggestionPlugin extends Plugin {
         console.log("[TaskSuggestion] Tasks folder:", TASK_FOLDER);
 
         this.repo = new TaskRepository(this.app, TASK_FOLDER);
+        this.suggestionMode = new SuggestionMode(this.app, this.repo);
 
         this.app.workspace.onLayoutReady(async () => {
 
             console.log("[TaskSuggestion] Vault ready — loading tasks");
-
             await this.repo.load();
 
         });
@@ -303,6 +178,18 @@ export default class TaskSuggestionPlugin extends Plugin {
                             .onClick(() => this.cloneAndClean(file));
                     });
 
+                    menu.addItem((item) => {
+                        item
+                            .setTitle("Rnd suggestions")
+                            .setIcon("dice")
+                            .onClick(() => {
+
+                                console.log("[TaskSuggestion] Entering random suggestion mode");
+                                this.suggestionMode.enable(file);
+
+                            });
+                    });
+
                 }
 
             })
@@ -317,21 +204,17 @@ export default class TaskSuggestionPlugin extends Plugin {
 
         try {
 
-            console.log("[TaskSuggestion] Clone requested");
-            console.log("[TaskSuggestion] Source file:", srcFile.path);
+            console.log("[TaskSuggestion] Clone requested:", srcFile.path);
 
             const vault = this.app.vault;
             const srcContent = await vault.read(srcFile);
 
             const nextMonday = this.getNextMonday();
-            console.log("[TaskSuggestion] Next Monday:", nextMonday);
-
             const nextMondayFileDate = this.formatDateYYYYMMDD(nextMonday);
 
             const { folderPath, baseName } = this.splitPath(srcFile.path);
 
             const firstSpace = baseName.indexOf(" ");
-
             const restOfTitle =
                 firstSpace > 0
                     ? baseName.substring(firstSpace + 1).trim()
@@ -348,8 +231,6 @@ export default class TaskSuggestionPlugin extends Plugin {
             console.log("[TaskSuggestion] Target file:", targetFilePath);
 
             const processed = new CloneProcessor().process(srcContent, nextMonday);
-
-            console.log("[TaskSuggestion] Creating new file");
 
             const created = await vault.create(targetFilePath, processed);
 
@@ -436,64 +317,6 @@ export default class TaskSuggestionPlugin extends Plugin {
 
 // --- End File: src\main.ts ---
 
-// --- Start File: esbuild.config.mjs ---
-
-import esbuild from "esbuild";
-import { copyFileSync, mkdirSync } from "fs";
-
-await esbuild.build({
-  entryPoints: ["src/main.ts"],
-  outfile: "dist/main.js",
-  bundle: true,
-  platform: "browser",
-  target: ["es2020"],
-  format: "cjs",
-  sourcemap: true,
-  external: ["obsidian"]
-});
-
-// ensure manifest is in dist
-mkdirSync("dist", { recursive: true });
-copyFileSync("manifest.json", "dist/manifest.json");
-console.log("Build complete");
-
-
-// --- End File: esbuild.config.mjs ---
-
-// --- Start File: tsconfig.json ---
-
-{
-  "compilerOptions": {
-    "target": "ES2020",
-    "module": "ESNext",
-    "moduleResolution": "Bundler",
-    "lib": ["ES2020", "DOM"],
-    "types": ["node", "obsidian"],
-    "strict": true,
-    "noEmit": true,
-    "inlineSourceMap": true
-  }
-}
-
-
-// --- End File: tsconfig.json ---
-
-// --- Start File: manifest.json ---
-
-{
-  "id": "task-suggestion",
-  "name": "Task Suggestion",
-  "version": "0.1.0",
-  "minAppVersion": "1.6.0",
-  "description": "Task suggestion",
-  "author": "Maxim Brightberg",
-  "authorUrl": "",
-  "isDesktopOnly": true
-}
-
-
-// --- End File: manifest.json ---
-
 // --- Start File: readme.md ---
 
 # Task Suggestion Obsidian Plugin
@@ -549,3 +372,303 @@ task-suggestion-obsidian-plugin/
 
 
 // --- End File: readme.md ---
+
+// --- Start File: manifest.json ---
+
+{
+  "id": "task-suggestion",
+  "name": "Task Suggestion",
+  "version": "0.1.0",
+  "minAppVersion": "1.6.0",
+  "description": "Task suggestion",
+  "author": "Maxim Brightberg",
+  "authorUrl": "",
+  "isDesktopOnly": true
+}
+
+
+// --- End File: manifest.json ---
+
+// --- Start File: src\SuggestionMode.ts ---
+
+import { App, MarkdownView, TFile } from "obsidian";
+import { TaskRepository } from "./TaskRepository";
+
+export class SuggestionMode {
+
+    private app: App;
+    private repo: TaskRepository;
+    private file!: TFile;
+    private active = false;
+    private doneButton?: HTMLButtonElement;
+
+    constructor(app: App, repo: TaskRepository) {
+        this.app = app;
+        this.repo = repo;
+    }
+
+    async enable(file: TFile) {
+
+        console.log("[TaskSuggestion] Random suggestion mode enabled");
+
+        this.file = file;
+        this.active = true;
+
+        await this.addDice();
+
+        this.attachDoneButton();
+
+        document.addEventListener("click", this.handleClick);
+    }
+
+    private async addDice() {
+
+        const content = await this.app.vault.read(this.file);
+
+        const lines = content.split("\n");
+
+        const updated = lines.map(line => {
+
+            if (line.includes("#^") && !line.includes("🎲")) {
+                return line + " 🎲";
+            }
+
+            return line;
+        });
+
+        await this.app.vault.modify(this.file, updated.join("\n"));
+
+        console.log("[TaskSuggestion] Dice added");
+    }
+
+    private attachDoneButton() {
+
+        const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+        if (!view) return;
+
+        const container = view.contentEl;
+
+        if (container.querySelector(".ts-done-btn")) return;
+
+        const btn = document.createElement("button");
+
+        btn.textContent = "Done";
+        btn.className = "ts-done-btn";
+
+        btn.style.display = "block";
+        btn.style.marginTop = "24px";
+
+        btn.onclick = () => this.exit();
+
+        container.appendChild(btn);
+
+        this.doneButton = btn;
+
+        console.log("[TaskSuggestion] Done button added");
+    }
+
+    private handleClick = async () => {
+
+        if (!this.active) return;
+
+        const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+        if (!view) return;
+
+        const editor = view.editor;
+
+        const cursor = editor.getCursor();
+        const line = editor.getLine(cursor.line);
+
+        if (!line || !line.includes("🎲")) return;
+
+        const match = line.match(/\[\[.*?#\^([a-zA-Z0-9\-]+).*?\]\]/);
+        if (!match) return;
+
+        const blockId = match[1];
+
+        console.log("[TaskSuggestion] Roll:", blockId);
+
+        const task = this.repo.getAll().find(t => t.id === blockId);
+        if (!task) return;
+
+        const candidates = this.repo.getByTag(task.tags);
+        if (!candidates.length) return;
+
+        const random =
+            candidates[Math.floor(Math.random() * candidates.length)];
+
+        const newLink =
+            `[[${random.title}#^${random.id}|${random.title}]] 🎲`;
+
+        editor.replaceRange(
+            line.replace(/\[\[.*?\]\].*?🎲/, newLink),
+            { line: cursor.line, ch: 0 },
+            { line: cursor.line, ch: line.length }
+        );
+
+        console.log("[TaskSuggestion] Suggested:", random.id);
+    };
+
+    async exit() {
+
+        console.log("[TaskSuggestion] Exit random suggestion mode");
+
+        this.active = false;
+
+        const content = await this.app.vault.read(this.file);
+
+        const cleaned = content.replace(/ 🎲/g, "");
+
+        await this.app.vault.modify(this.file, cleaned);
+
+        if (this.doneButton) {
+            this.doneButton.remove();
+            this.doneButton = undefined;
+        }
+
+        document.removeEventListener("click", this.handleClick);
+    }
+}
+
+// --- End File: src\SuggestionMode.ts ---
+
+// --- Start File: src\TaskRepository.ts ---
+
+import { App, TFile } from "obsidian";
+
+export interface Task {
+    id: string;
+    title: string;
+    tags: string[];
+}
+
+export class TaskRepository {
+
+    private app: App;
+    private tasks: Map<string, Task> = new Map();
+    private folder: string;
+
+    constructor(app: App, folder: string) {
+        this.app = app;
+        this.folder = folder;
+    }
+
+    async load(): Promise<void> {
+
+        console.log("[TaskSuggestion] Loading tasks");
+
+        const files = this.app.vault
+            .getMarkdownFiles()
+            .filter(f => f.path.startsWith(this.folder));
+
+        console.log(`[TaskSuggestion] Scanning ${files.length} task files`);
+
+        for (const file of files) {
+            await this.scanFile(file);
+        }
+
+        console.log(`[TaskSuggestion] Loaded ${this.tasks.size} tasks`);
+    }
+
+    getAll(): Task[] {
+        return Array.from(this.tasks.values());
+    }
+
+    getByTag(tags: string[]): Task[] {
+
+        return this.getAll().filter(task =>
+            task.tags.some(t => tags.includes(t))
+        );
+    }
+
+    private async scanFile(file: TFile): Promise<void> {
+
+        const content = await this.app.vault.read(file);
+
+        const lines = content.split("\n");
+
+        for (let i = 0; i < lines.length; i++) {
+
+            const match = lines[i].match(/^- (.+?)\s+\^([a-zA-Z0-9\-]+)/);
+
+            if (!match) continue;
+
+            const title = match[1].trim();
+            const id = match[2];
+
+            const task: Task = {
+                id,
+                title,
+                tags: []
+            };
+
+            let j = i + 1;
+
+            while (j < lines.length && lines[j].startsWith("\t")) {
+
+                const meta = lines[j].trim();
+
+                if (meta.startsWith("- Tags:")) {
+
+                    const tagStr = meta.replace("- Tags:", "").trim();
+
+                    task.tags = tagStr.split(",").map(t => t.trim());
+
+                }
+
+                j++;
+            }
+
+            this.tasks.set(id, task);
+
+            console.log(`[TaskSuggestion] Task loaded: ${id}`);
+        }
+    }
+}
+
+// --- End File: src\TaskRepository.ts ---
+
+// --- Start File: esbuild.config.mjs ---
+
+import esbuild from "esbuild";
+import { copyFileSync, mkdirSync } from "fs";
+
+await esbuild.build({
+  entryPoints: ["src/main.ts"],
+  outfile: "dist/main.js",
+  bundle: true,
+  platform: "browser",
+  target: ["es2020"],
+  format: "cjs",
+  sourcemap: true,
+  external: ["obsidian"]
+});
+
+// ensure manifest is in dist
+mkdirSync("dist", { recursive: true });
+copyFileSync("manifest.json", "dist/manifest.json");
+console.log("Build complete");
+
+
+// --- End File: esbuild.config.mjs ---
+
+
+--------------------------------------------------
+// --- Prompt ---
+
+Please perform the following:
+
+1. **Review the Code**  
+   - Examine the structure, logic, and clarity of the implementation.  
+   - Comment on code organization, readability, and maintainability.
+
+2. **Identify Potential Issues**  
+   - Analyze for bugs, edge cases, or performance bottlenecks.  
+   - Consider portability, extensibility, and error handling robustness.
+
+3. **Provide Suggestions**  
+   - Offer ideas to improve the current design or implementation.  
+   - Recommend best practices or alternative patterns, if applicable.
+
+4. **Additional Task**  
+   - {additional_task_0}
