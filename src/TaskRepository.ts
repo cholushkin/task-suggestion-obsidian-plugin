@@ -4,6 +4,7 @@ export interface Task {
     id: string;
     title: string;
     tags: string[];
+    path: string;
 }
 
 export class TaskRepository {
@@ -63,7 +64,8 @@ export class TaskRepository {
             const task: Task = {
                 id,
                 title,
-                tags: []
+                tags: [],
+                path: file.path
             };
 
             let j = i + 1;

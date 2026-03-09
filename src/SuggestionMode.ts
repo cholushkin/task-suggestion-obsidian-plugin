@@ -49,9 +49,9 @@ export class SuggestionMode {
         this.active = false;
     }
 
-    /* ------------------------------------------------ */
-    /* LINK INTERCEPTION                               */
-    /* ------------------------------------------------ */
+    /* ---------------------------------------- */
+    /* LINK INTERCEPTION                        */
+    /* ---------------------------------------- */
 
     private hookHandler() {
 
@@ -66,7 +66,6 @@ export class SuggestionMode {
         ) => {
 
             if (!this.active) {
-
                 return this.originalOpenLink.call(
                     workspace,
                     linktext,
@@ -75,31 +74,19 @@ export class SuggestionMode {
                 );
             }
 
-            /* ---------- EXIT SUGGESTION MODE ---------- */
-
             if (linktext === "ts-exit-suggestion-mode") {
-
-                console.log("[TaskSuggestion] exit clicked");
-
                 await this.exit();
-
                 return;
             }
-
-            /* ---------- ROLL TASK ---------- */
 
             if (linktext.startsWith("ts-roll-")) {
 
                 const id = linktext.replace("ts-roll-", "");
 
-                console.log("[TaskSuggestion] roll clicked:", id);
-
                 await this.roll(id);
 
                 return;
             }
-
-            /* ---------- NORMAL LINKS ---------- */
 
             return this.originalOpenLink.call(
                 workspace,
@@ -119,9 +106,9 @@ export class SuggestionMode {
         }
     }
 
-    /* ------------------------------------------------ */
-    /* TASK ROLL                                        */
-    /* ------------------------------------------------ */
+    /* ---------------------------------------- */
+    /* TASK ROLL                                */
+    /* ---------------------------------------- */
 
     private async roll(id: string) {
 
@@ -134,17 +121,16 @@ export class SuggestionMode {
         const random =
             candidates[Math.floor(Math.random() * candidates.length)];
 
-        await this.replaceLine(id, random.id, random.title);
+        await this.replaceLine(id, random);
     }
 
-    /* ------------------------------------------------ */
-    /* REPLACE TASK LINE                                */
-    /* ------------------------------------------------ */
+    /* ---------------------------------------- */
+    /* REPLACE TASK LINE                        */
+    /* ---------------------------------------- */
 
     private async replaceLine(
         oldId: string,
-        newId: string,
-        title: string
+        newTask: { id: string; title: string; path: string }
     ) {
 
         const content = await this.app.vault.read(this.file);
@@ -154,18 +140,18 @@ export class SuggestionMode {
 
             if (!line.includes(`#^${oldId}`)) return line;
 
-            const newTask =
-                `[[${title}#^${newId}|${title}]] [[ts-roll-${newId}|🎲]]`;
+            const newLink =
+                `[[${newTask.path}#^${newTask.id}|${newTask.title}]] [[ts-roll-${newTask.id}|🎲]]`;
 
-            return line.replace(/\[\[.*?#\^[^\]]+\|[^\]]+\]\].*/, newTask);
+            return line.replace(/\[\[.*?#\^[^\]]+\]\].*/, newLink);
         });
 
         await this.app.vault.modify(this.file, updated.join("\n"));
     }
 
-    /* ------------------------------------------------ */
-    /* INSERT DICE LINKS                                */
-    /* ------------------------------------------------ */
+    /* ---------------------------------------- */
+    /* INSERT DICE LINKS                        */
+    /* ---------------------------------------- */
 
     private async injectDiceLinks() {
 
