@@ -15,7 +15,7 @@ export class SuggestionMode {
     }
 
     /* ---------------------------------------- */
-    /* ENABLE SUGGESTION MODE                   */
+    /* ENABLE MODE                              */
     /* ---------------------------------------- */
 
     async enable(file: TFile) {
@@ -35,7 +35,7 @@ export class SuggestionMode {
     }
 
     /* ---------------------------------------- */
-    /* EXIT SUGGESTION MODE                     */
+    /* EXIT MODE                                */
     /* ---------------------------------------- */
 
     async exit(file: TFile) {
@@ -43,12 +43,13 @@ export class SuggestionMode {
         console.log("[TaskSuggestion] Suggestion mode exit");
 
         const content = await this.app.vault.read(file);
+        const lines = content.split("\n");
 
-        const cleaned = content
-            .replace(/\s*\[\[ts-roll-[^]]+]]/g, "")
-            .replace(/\[\[ts-exit-suggestion-mode\|Exit suggestion mode]]/g, "");
+        const cleaned = lines
+            .map(line => this.removeDiceFromLine(line))
+            .filter(line => !line.includes("ts-exit-suggestion-mode"));
 
-        await this.app.vault.modify(file, cleaned);
+        await this.app.vault.modify(file, cleaned.join("\n"));
     }
 
     /* ---------------------------------------- */
@@ -59,24 +60,15 @@ export class SuggestionMode {
 
         const content = await this.app.vault.read(file);
 
-        const hasDice = content.includes("ts-roll-");
-        const hasExit = content.includes("ts-exit-suggestion-mode");
-
-        if (hasDice !== hasExit) {
-
-            console.warn(
-                "[TaskSuggestion] inconsistent suggestion mode state",
-                { hasDice, hasExit }
-            );
-        }
-
         return {
-            active: hasDice || hasExit
+            active:
+                content.includes("ts-roll-") ||
+                content.includes("ts-exit-suggestion-mode")
         };
     }
 
     /* ---------------------------------------- */
-    /* LINK INTERCEPTION (GLOBAL)               */
+    /* LINK INTERCEPTION                        */
     /* ---------------------------------------- */
 
     private installLinkInterceptor() {
@@ -95,7 +87,6 @@ export class SuggestionMode {
             newLeaf?: boolean
         ) => {
 
-            /* Only care about our links */
             if (!linktext.startsWith("ts-")) {
                 return original.call(workspace, linktext, sourcePath, newLeaf);
             }
@@ -122,7 +113,7 @@ export class SuggestionMode {
 
                 const id = linktext.replace("ts-roll-", "");
 
-                await this.roll(id);
+                await this.roll(file, id);
 
                 return;
             }
@@ -132,10 +123,10 @@ export class SuggestionMode {
     }
 
     /* ---------------------------------------- */
-    /* TASK ROLL                                */
+    /* ROLL TASK                                */
     /* ---------------------------------------- */
 
-    private async roll(id: string) {
+    private async roll(file: TFile, id: string) {
 
         const task = this.repo.getAll().find(t => t.id === id);
         if (!task) return;
@@ -146,37 +137,35 @@ export class SuggestionMode {
         const random =
             candidates[Math.floor(Math.random() * candidates.length)];
 
-        this.replaceLine(id, random);
+        await this.replaceLine(file, id, random);
     }
 
     /* ---------------------------------------- */
-    /* EDITOR LINE REPLACEMENT                  */
+    /* REPLACE LINE                             */
     /* ---------------------------------------- */
 
-    private replaceLine(oldId: string, newTask: Task) {
+    private async replaceLine(file: TFile, oldId: string, newTask: Task) {
 
-        const view = this.app.workspace.getActiveViewOfType(MarkdownView);
-        if (!view) return;
+        const content = await this.app.vault.read(file);
+        const lines = content.split("\n");
 
-        const editor = view.editor;
+        const updated = lines.map(line => {
 
-        const cursor = editor.getCursor();
-        const line = editor.getLine(cursor.line);
+            if (!this.lineContainsTaskId(line, oldId)) return line;
 
-        if (!line || !line.includes(`#^${oldId}`)) return;
+            const prefixMatch = line.match(/^(.*?)\[\[/);
+            if (!prefixMatch) return line;
 
-        const newLink =
-            `[[${newTask.path}#^${newTask.id}|${newTask.title}]] [[ts-roll-${newTask.id}|🎲]]`;
+            const prefix = prefixMatch[1];
 
-        editor.replaceRange(
-            newLink,
-            { line: cursor.line, ch: 0 },
-            { line: cursor.line, ch: line.length }
-        );
+            return `${prefix}[[${newTask.path}#^${newTask.id}|${newTask.title}]] [[ts-roll-${newTask.id}|🎲]]`;
+        });
+
+        await this.app.vault.modify(file, updated.join("\n"));
     }
 
     /* ---------------------------------------- */
-    /* INSERT DICE LINKS                        */
+    /* ADD DICE                                 */
     /* ---------------------------------------- */
 
     private async injectDiceLinks() {
@@ -186,23 +175,42 @@ export class SuggestionMode {
 
         const updated = lines.map(line => {
 
-            const match = line.match(/\[\[.*?#\^([a-zA-Z0-9-]+).*?]]/);
-            if (!match) return line;
+            const id = this.extractTaskId(line);
 
-            const id = match[1];
+            if (!id) return line;
 
             if (line.includes("ts-roll-")) return line;
 
             return `${line} [[ts-roll-${id}|🎲]]`;
         });
 
-        if (!content.includes("ts-exit-suggestion-mode")) {
-
-            updated.push("");
-            updated.push("---");
+        if (!updated.some(l => l.includes("ts-exit-suggestion-mode"))) {
             updated.push("[[ts-exit-suggestion-mode|Exit suggestion mode]]");
         }
 
         await this.app.vault.modify(this.file, updated.join("\n"));
+    }
+
+    /* ---------------------------------------- */
+    /* HELPERS                                  */
+    /* ---------------------------------------- */
+
+    private extractTaskId(line: string): string | null {
+
+        const match = line.match(/\[\[.*?#\^([a-zA-Z0-9-]+).*?]]/);
+
+        return match ? match[1] : null;
+    }
+
+    private lineContainsTaskId(line: string, id: string): boolean {
+
+        const regex = new RegExp(`#\\^${id}\\b`);
+
+        return regex.test(line);
+    }
+
+    private removeDiceFromLine(line: string): string {
+
+        return line.replace(/\s*\[\[ts-roll-[^\]]+\]\]/g, "").trimEnd();
     }
 }
